@@ -59,13 +59,15 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
         baseToken.safeApprove(address(router), _amount);
 
         uint256 totalSpent = 0;
+        address executor;
+        AggregationRouterV5Interface.SwapDescription memory desc;
+        bytes memory permit;
+        bytes memory data;
         for (uint256 i = 0; i < _swapdata.length; i++) {
-            (
-                address executor,
-                AggregationRouterV5Interface.SwapDescription memory desc,
-                bytes memory permit,
-                bytes memory data
-            ) = abi.decode(_swapdata[i][4:], (address, AggregationRouterV5Interface.SwapDescription, bytes, bytes));
+            (executor, desc, permit, data) = abi.decode(
+                _swapdata[i][4:],
+                (address, AggregationRouterV5Interface.SwapDescription, bytes, bytes)
+            );
             require(desc.dstReceiver == address(this), 'Invalid receiver');
             require(desc.srcToken == baseToken && desc.dstToken == portfolio[i].token, 'Invalid swap token');
             require(desc.amount == (portfolio[i].weight * _amount) / 100, 'Invalid swap amount');
@@ -138,7 +140,9 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
 
     function userInfo(address user) external view returns (uint256 usdValue, uint256 tokenBalance) {
         tokenBalance = balanceOf(user);
-        usdValue = (totalValue() * tokenBalance) / totalSupply();
+        if (tokenBalance > 0) {
+            usdValue = (totalValue() * tokenBalance) / totalSupply();
+        }
     }
 
     function withdrawToken(ERC20 _token, uint256 _amount) external onlyOwner {
@@ -151,7 +155,7 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
             (, int256 answer, , , ) = portfolio[i].priceFeed.latestRoundData();
             uint8 priceDecimals = portfolio[i].priceFeed.decimals();
             uint8 tokenDecimals = portfolio[i].token.decimals();
-            total += (uint256(answer) * portfolio[i].amount) / 10**(priceDecimals + tokenDecimals - 18);
+            total += (uint256(answer) * portfolio[i].amount) / 10**(priceDecimals + tokenDecimals - 6);
         }
     }
 }
