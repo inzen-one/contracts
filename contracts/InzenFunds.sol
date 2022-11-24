@@ -3,13 +3,12 @@ pragma solidity =0.8.4;
 
 import '@openzeppelin/contracts/access/AccessControlEnumerable.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
-import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol';
+import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol';
 import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import './interfaces/AggregatorV3Interface.sol';
 import './interfaces/AggregationRouterV5Interface.sol';
 
-contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
+contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
     using SafeERC20 for ERC20;
 
     bytes32 public constant PORTFOLIO_ENGINEER_ROLE = keccak256('PORTFOLIO_ENGINEER_ROLE');
@@ -32,6 +31,13 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
     event Reconfigure(uint256[] weights);
     event AddAsset(ERC20 indexed token, AggregatorV3Interface priceFeed);
 
+    /**
+     * @notice Initialize the contract
+     * @param _name: Fund name
+     * @param _baseToken: deposit token
+     * @param _router: 1inch aggregation router
+     * @param _portfolio: desired asset allocation
+     */
     constructor(
         string memory _name,
         ERC20 _baseToken,
@@ -55,6 +61,12 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         _setupRole(PORTFOLIO_ENGINEER_ROLE, _msgSender());
     }
 
+    /**
+     * @notice Invest in the fund to receive fund token
+     * @param _amount: amount of base token to deposit
+     * @param _swapdata: tx.data from 1inch api for swap base token to each asset in porfolio
+     * @dev call `https://api.1inch.io/v5.0/${chainId}/swap?fromTokenAddress=${baseToken}&toTokenAddress=${toToken}&amount=${amount}&fromAddress=${poolAddress}&slippage=1&disableEstimate=true`
+     */
     function deposit(uint256 _amount, bytes[] calldata _swapdata) external nonReentrant {
         require(_swapdata.length == portfolio.length, 'Invalid swap data');
 
@@ -95,6 +107,10 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         emit Deposit(msg.sender, totalSpent, mintAmount);
     }
 
+    /**
+     * @notice Burn fund token to get back base token
+     * @param _burnAmount: amount of fund token to withdraw
+     */
     function withdraw(uint256 _burnAmount) external nonReentrant {
         for (uint256 i = 0; i < portfolio.length; i++) {
             uint256 returnAmount = (portfolio[i].amount * _burnAmount) / totalSupply();
@@ -105,6 +121,11 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         emit Withdraw(msg.sender, _burnAmount);
     }
 
+    /**
+     * @notice Swap token in pool to maintain the desired allocation
+     * @param _swapdata: tx.data from 1inch api for swap assets in porfolio
+     * @dev call `https://api.1inch.io/v5.0/${chainId}/swap?fromTokenAddress=${fromToken}&toTokenAddress=${toToken}&amount=${amount}&fromAddress=${poolAddress}&slippage=1&disableEstimate=true`
+     */
     function rebalance(bytes[] calldata _swapdata) external onlyRole(PORTFOLIO_ENGINEER_ROLE) nonReentrant {
         address executor;
         AggregationRouterV5Interface.SwapDescription memory desc;
@@ -125,6 +146,10 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Update desired allocation
+     * @param _weights: weights of each asset
+     */
     function reconfigure(uint256[] memory _weights) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_weights.length == portfolio.length, 'Invalid length');
         uint256 totalWeight = 0;
@@ -136,6 +161,11 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         emit Reconfigure(_weights);
     }
 
+    /**
+     * @notice Add new asset with weight = 0
+     * @param _token: token address
+     * @param _priceFeed: chainlink price feed
+     */
     function addAsset(ERC20 _token, AggregatorV3Interface _priceFeed) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(tokenIdx[_token] == 0, 'Duplicated asset');
         portfolio.push(Assets(_token, _priceFeed, 0, 0));
@@ -143,6 +173,9 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         emit AddAsset(_token, _priceFeed);
     }
 
+    /**
+     * @notice Get fund overview
+     */
     function overview()
         external
         view
@@ -162,6 +195,9 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Get user investment info
+     */
     function userInfo(address user)
         external
         view
@@ -176,10 +212,6 @@ contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
             usdValue = (totalValue() * tokenBalance) / totalSupply();
         }
         isPorfolioEngineer = hasRole(PORTFOLIO_ENGINEER_ROLE, user);
-    }
-
-    function withdrawToken(ERC20 _token, uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _token.safeTransfer(msg.sender, _amount);
     }
 
     function totalValue() public view returns (uint256 total) {
