@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity =0.8.4;
 
-import '@openzeppelin/contracts/access/Ownable.sol';
+import '@openzeppelin/contracts/access/AccessControlEnumerable.sol';
 import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
 import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
 import '@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol';
@@ -9,8 +9,10 @@ import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import './interfaces/AggregatorV3Interface.sol';
 import './interfaces/AggregationRouterV5Interface.sol';
 
-contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
+contract InzenFunds is AccessControlEnumerable, ERC20Permit, ReentrancyGuard {
     using SafeERC20 for ERC20;
+
+    bytes32 public constant PORTFOLIO_ENGINEER_ROLE = keccak256('PORTFOLIO_ENGINEER_ROLE');
 
     struct Assets {
         ERC20 token;
@@ -27,6 +29,8 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
     event Deposit(address indexed user, uint256 baseAmount, uint256 mintAmount);
     event Withdraw(address indexed user, uint256 burnAmount);
     event Rebalance(ERC20 indexed fromToken, ERC20 indexed toToken, uint256 fromAmount, uint256 toAmount);
+    event Reconfigure(uint256[] weights);
+    event AddAsset(ERC20 indexed token, AggregatorV3Interface priceFeed);
 
     constructor(
         string memory _name,
@@ -40,15 +44,15 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
         uint256 totalWeight = 0;
         for (uint256 i = 0; i < _portfolio.length; i++) {
             require(tokenIdx[_portfolio[i].token] == 0, 'Duplicated asset');
-            require(
-                baseToken != _portfolio[i].token && _portfolio[i].weight > 0 && _portfolio[i].amount == 0,
-                'Invalid asset'
-            );
+            require(baseToken != _portfolio[i].token && _portfolio[i].amount == 0, 'Invalid asset');
             portfolio.push(_portfolio[i]);
-            tokenIdx[_portfolio[i].token] = i;
+            tokenIdx[_portfolio[i].token] = portfolio.length;
             totalWeight += _portfolio[i].weight;
         }
         require(totalWeight == 100, 'Invalid asset weights');
+
+        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        _setupRole(PORTFOLIO_ENGINEER_ROLE, _msgSender());
     }
 
     function deposit(uint256 _amount, bytes[] calldata _swapdata) external nonReentrant {
@@ -83,7 +87,7 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
 
         uint256 newValue = totalValue();
         require(oldValue < newValue, 'New value can not less than old value');
-        uint256 mintAmount = newValue;
+        uint256 mintAmount = newValue * 10**12;
         if (oldValue > 0) {
             mintAmount = ((newValue - oldValue) * totalSupply()) / oldValue;
         }
@@ -101,22 +105,42 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
         emit Withdraw(msg.sender, _burnAmount);
     }
 
-    function rebalance(bytes[] calldata _swapdata) external onlyOwner nonReentrant {
+    function rebalance(bytes[] calldata _swapdata) external onlyRole(PORTFOLIO_ENGINEER_ROLE) nonReentrant {
+        address executor;
+        AggregationRouterV5Interface.SwapDescription memory desc;
+        bytes memory permit;
+        bytes memory data;
         for (uint256 i = 0; i < _swapdata.length; i++) {
-            (
-                address executor,
-                AggregationRouterV5Interface.SwapDescription memory desc,
-                bytes memory permit,
-                bytes memory data
-            ) = abi.decode(_swapdata[i][4:], (address, AggregationRouterV5Interface.SwapDescription, bytes, bytes));
+            (executor, desc, permit, data) = abi.decode(
+                _swapdata[i][4:],
+                (address, AggregationRouterV5Interface.SwapDescription, bytes, bytes)
+            );
             require(desc.dstReceiver == address(this), 'Invalid receiver');
             require(tokenIdx[desc.srcToken] != 0 && tokenIdx[desc.dstToken] != 0, 'Invalid swap token');
             desc.srcToken.safeApprove(address(router), desc.amount);
             (uint256 returnAmount, uint256 spentAmount) = router.swap(executor, desc, permit, data);
-            portfolio[tokenIdx[desc.srcToken]].amount -= spentAmount;
-            portfolio[tokenIdx[desc.dstToken]].amount += returnAmount;
+            portfolio[tokenIdx[desc.srcToken] - 1].amount -= spentAmount;
+            portfolio[tokenIdx[desc.dstToken] - 1].amount += returnAmount;
             emit Rebalance(desc.srcToken, desc.dstToken, spentAmount, returnAmount);
         }
+    }
+
+    function reconfigure(uint256[] memory _weights) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_weights.length == portfolio.length, 'Invalid length');
+        uint256 totalWeight = 0;
+        for (uint256 i = 0; i < _weights.length; i++) {
+            portfolio[i].weight = _weights[i];
+            totalWeight += _weights[i];
+        }
+        require(totalWeight == 100, 'Invalid asset weights');
+        emit Reconfigure(_weights);
+    }
+
+    function addAsset(ERC20 _token, AggregatorV3Interface _priceFeed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(tokenIdx[_token] == 0, 'Duplicated asset');
+        portfolio.push(Assets(_token, _priceFeed, 0, 0));
+        tokenIdx[_token] = portfolio.length;
+        emit AddAsset(_token, _priceFeed);
     }
 
     function overview()
@@ -138,14 +162,23 @@ contract InzenFunds is Ownable, ERC20Permit, ReentrancyGuard {
         }
     }
 
-    function userInfo(address user) external view returns (uint256 usdValue, uint256 tokenBalance) {
+    function userInfo(address user)
+        external
+        view
+        returns (
+            uint256 usdValue,
+            uint256 tokenBalance,
+            bool isPorfolioEngineer
+        )
+    {
         tokenBalance = balanceOf(user);
         if (tokenBalance > 0) {
             usdValue = (totalValue() * tokenBalance) / totalSupply();
         }
+        isPorfolioEngineer = hasRole(PORTFOLIO_ENGINEER_ROLE, user);
     }
 
-    function withdrawToken(ERC20 _token, uint256 _amount) external onlyOwner {
+    function withdrawToken(ERC20 _token, uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _token.safeTransfer(msg.sender, _amount);
     }
 
