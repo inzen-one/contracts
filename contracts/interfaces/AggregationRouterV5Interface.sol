@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
 
 interface AggregationRouterV5Interface {
     struct SwapDescription {
-        IERC20 srcToken;
-        IERC20 dstToken;
+        ERC20 srcToken;
+        ERC20 dstToken;
         address payable srcReceiver;
         address payable dstReceiver;
         uint256 amount;
