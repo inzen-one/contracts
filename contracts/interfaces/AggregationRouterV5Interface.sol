@@ -20,4 +20,10 @@ interface AggregationRouterV5Interface {
         bytes calldata permit,
         bytes calldata data
     ) external payable returns (uint256 returnAmount, uint256 spentAmount);
+
+    function uniswapV3Swap(
+        uint256 amount,
+        uint256 minReturn,
+        uint256[] calldata pools
+    ) external payable returns (uint256 returnAmount);
 }
