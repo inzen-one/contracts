@@ -36,7 +36,7 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
         _defaultValues.push(0);
     }
 
-    function proposalTopics() external override view returns (bytes32[] memory topics) {
+    function proposalTopics() external view override returns (bytes32[] memory topics) {
         topics = new bytes32[](4);
         topics[0] = NewPortfolioEngineer.selector;
         topics[1] = RemovePortfolioEngineer.selector;
@@ -45,11 +45,11 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
         return topics;
     }
 
-    function votingDelay() public override pure returns (uint256) {
+    function votingDelay() public pure override returns (uint256) {
         return 0;
     }
 
-    function votingPeriod() public override view returns (uint256) {
+    function votingPeriod() public view override returns (uint256) {
         return period;
     }
 
@@ -115,7 +115,7 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
         return execute(_defaultTargets, _defaultValues, calldatas, keccak256(bytes('')));
     }
 
-    function supportsInterface(bytes4 interfaceId) public virtual override(Governor, EasyGovernor) view returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(Governor, EasyGovernor) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 }
