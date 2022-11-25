@@ -6,6 +6,10 @@ function expandTo18Decimals(n) {
 	return BigNumber.from(n).mul(BigNumber.from(10).pow(18))
 }
 
+const checkValidPool = (name) => {
+	if (!['DeFi', 'Polygon4', 'Web3'].includes(name)) throw 'Invalid pool name'
+}
+
 task('accounts', 'Prints the list of accounts', async (_args, hre) => {
 	const accounts = await hre.ethers.getSigners();
 	for (const account of accounts) {
@@ -14,8 +18,10 @@ task('accounts', 'Prints the list of accounts', async (_args, hre) => {
 });
 
 task("overview", "Get pool overview")
-	.setAction(async (_args, hre) => {
-		const poolAddress = (await hre.deployments.get("InzenFunds")).address
+	.addParam("name", "Pool name (DeFi, Polygon4, Web3)")
+	.setAction(async ({ name }, hre) => {
+		checkValidPool(name);
+		const poolAddress = (await hre.deployments.get(`Inzen${name}`)).address
 		const pool = await hre.ethers.getContractAt('InzenFunds', poolAddress)
 
 		console.log(`*** Pool Info ***`);
@@ -90,4 +96,16 @@ task("recover", "Recover token from pool")
 			const tx = await pool.withdrawToken(token, balance);
 			console.log(token, balance, tx.hash)
 		}
+	})
+
+task("setgovernor", "Set pool governor")
+	.addParam("name", "Pool name (DeFi, Polygon4, Web3)")
+	.setAction(async ({ name }, hre) => {
+		checkValidPool(name);
+		const poolAddress = (await hre.deployments.get(`Inzen${name}`)).address
+		const pool = await hre.ethers.getContractAt('InzenFunds', poolAddress)
+		const governorAddress = (await hre.deployments.get(`Inzen${name}Governor`)).address
+		const role = await pool.DEFAULT_ADMIN_ROLE()
+		const grantTx = await pool.grantRole(role, governorAddress);
+		console.log(`GrantTx: ${JSON.stringify(grantTx)}`)
 	})
