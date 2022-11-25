@@ -9,10 +9,11 @@ module.exports = async function ({ getNamedAccounts, deployments }) {
     ['0x2C89bbc92BD86F8075d1DEcc58C7F4E0107f286b', '0xe01eA2fbd8D76ee323FbEd03eB9a8625EC981A10', 0, 25], // AVAX
     ['0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', '0xAB594600376Ec9fD91F8e885dADF0CE036862dE0', 0, 25], // MATIC
   ];
-  await deploy("InzenFunds", {
+  await deploy("InzenPolygon4", {
+    contract: 'InzenFunds',
     from: deployer,
     args: [
-      'Inzen: Test4',
+      'Inzen: Polygon4',
       '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
       '0x1111111254EEB25477B68fb85Ed929f73A960582',
       portfolio
@@ -21,4 +22,4 @@ module.exports = async function ({ getNamedAccounts, deployments }) {
   })
 }
 
-module.exports.tags = ["InzenFunds"]
+module.exports.tags = ["InzenPolygon4"]

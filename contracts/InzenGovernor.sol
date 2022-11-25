@@ -21,7 +21,7 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
     event NewAsset(
         uint256 indexed proposalId,
         EasyGovernor.EventState state,
-        ERC20 indexed token,
+        ERC20 token,
         AggregatorV3Interface priceFeed
     );
 
