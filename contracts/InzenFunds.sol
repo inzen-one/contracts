@@ -7,6 +7,7 @@ import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol';
 import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
 import './interfaces/AggregatorV3Interface.sol';
 import './interfaces/AggregationRouterV5Interface.sol';
+import './interfaces/IUniswapV2Router01.sol';
 
 contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
     using SafeERC20 for ERC20;
@@ -26,7 +27,7 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
     ERC20 public baseToken;
 
     event Deposit(address indexed user, uint256 baseAmount, uint256 mintAmount);
-    event Withdraw(address indexed user, uint256 burnAmount);
+    event Withdraw(address indexed user, uint256 baseAmount, uint256 burnAmount);
     event Rebalance(ERC20 indexed fromToken, ERC20 indexed toToken, uint256 fromAmount, uint256 toAmount);
     event Reconfigure(uint256[] weights);
     event AddAsset(ERC20 indexed token, AggregatorV3Interface priceFeed);
@@ -43,7 +44,7 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
         ERC20 _baseToken,
         AggregationRouterV5Interface _router,
         Assets[] memory _portfolio
-    ) public ERC20(_name, 'IZF') ERC20Permit(_name) {
+    ) ERC20(_name, 'IZF') ERC20Permit(_name) {
         baseToken = _baseToken;
         router = _router;
 
@@ -108,7 +109,7 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
     }
 
     /**
-     * @notice Burn fund token to get back base token
+     * @notice Burn fund token to get back assets
      * @param _burnAmount: amount of fund token to withdraw
      */
     function withdraw(uint256 _burnAmount) external nonReentrant {
@@ -118,7 +119,35 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
             portfolio[i].token.safeTransfer(msg.sender, returnAmount);
         }
         _burn(msg.sender, _burnAmount);
-        emit Withdraw(msg.sender, _burnAmount);
+        emit Withdraw(msg.sender, 0, _burnAmount);
+    }
+
+    /**
+     * @notice Burn fund token to get back base token
+     * @param _burnAmount: amount of fund token to withdraw
+     */
+    function uniWithdraw(uint256 _burnAmount, IUniswapV2Router01 _uniRouter) external nonReentrant {
+        address[] memory path = new address[](2);
+        path[1] = address(baseToken);
+
+        uint256 totalReturn = 0;
+        for (uint256 i = 0; i < portfolio.length; i++) {
+            uint256 returnAmount = (portfolio[i].amount * _burnAmount) / totalSupply();
+            portfolio[i].amount -= returnAmount;
+            portfolio[i].token.safeApprove(address(_uniRouter), returnAmount);
+            path[0] = address(portfolio[i].token);
+
+            uint256[] memory amounts = _uniRouter.swapExactTokensForTokens(
+                returnAmount,
+                0,
+                path,
+                msg.sender,
+                block.timestamp
+            );
+            totalReturn += amounts[0];
+        }
+        _burn(msg.sender, _burnAmount);
+        emit Withdraw(msg.sender, totalReturn, _burnAmount);
     }
 
     /**
