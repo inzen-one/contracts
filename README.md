@@ -29,17 +29,15 @@ $ yarn compile
 Deploy contract
 
 ```bash
-$ yarn mainnet:deploy # for bsc mainnet or
-$ yarn testnet:deploy # for bsc testnet
+$ yarn mainnet:deploy
 ```
 
 (Optional) Verify contract
 
-- Sign up for bscscan account: https://bscscan.com/register
-- Generate api token: https://bscscan.com/myapikey
+- Sign up for polygonscan account: https://polygonscan.com/register
+- Generate api token: https://polygonscan.com/myapikey
 
 ```bash
-$ export ETHERSCAN_API_KEY=<bscscan_api_token>
-$ yarn mainnet:verify # for bsc mainnet or
-$ yarn testnet:verify # for bsc testnet
+$ export ETHERSCAN_API_KEY=<polygonscan_api_token>
+$ yarn mainnet:verify
 ```
