@@ -24,63 +24,67 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
         ERC20 token,
         AggregatorV3Interface priceFeed
     );
+    event UpdateRebalanceBonus(uint256 indexed proposalId, EasyGovernor.EventState state, uint256 bonus);
+    event UpdateMinRebalanceInterval(uint256 indexed proposalId, EasyGovernor.EventState state, uint256 interval);
 
     constructor(
         string memory _name,
         ERC20Votes _tokenAddress,
         uint256 _period,
         uint256 _quorum
-    ) public Governor(_name) GovernorVotes(_tokenAddress) GovernorVotesQuorumFraction(_quorum) {
+    ) Governor(_name) GovernorVotes(_tokenAddress) GovernorVotesQuorumFraction(_quorum) {
         period = _period;
         _defaultTargets.push(address(_tokenAddress));
         _defaultValues.push(0);
     }
 
-    function proposalTopics() external view override returns (bytes32[] memory topics) {
-        topics = new bytes32[](4);
+    function proposalTopics() external override pure returns (bytes32[] memory topics) {
+        topics = new bytes32[](6);
         topics[0] = NewPortfolioEngineer.selector;
         topics[1] = RemovePortfolioEngineer.selector;
         topics[2] = Reconfigure.selector;
         topics[3] = NewAsset.selector;
+        topics[4] = UpdateRebalanceBonus.selector;
+        topics[5] = UpdateMinRebalanceInterval.selector;
         return topics;
     }
 
-    function votingDelay() public pure override returns (uint256) {
+    function votingDelay() public override pure returns (uint256) {
         return 0;
     }
 
-    function votingPeriod() public view override returns (uint256) {
+    function votingPeriod() public override view returns (uint256) {
         return period;
     }
 
-    function proposeNewPortfolioEngineer(address user) public returns (uint256 proposalId) {
-        require(!AccessControl(address(token)).hasRole(PORTFOLIO_ENGINEER_ROLE, user), 'Role granted');
+    function proposeNewPortfolioEngineer(address _user) public returns (uint256 proposalId) {
+        require(!AccessControl(address(token)).hasRole(PORTFOLIO_ENGINEER_ROLE, _user), 'Role granted');
         proposalId = defaultPropose(
-            abi.encodeWithSelector(AccessControl.grantRole.selector, PORTFOLIO_ENGINEER_ROLE, user)
+            abi.encodeWithSelector(AccessControl.grantRole.selector, PORTFOLIO_ENGINEER_ROLE, _user)
         );
-        emit NewPortfolioEngineer(proposalId, EventState.Propose, user);
+        emit NewPortfolioEngineer(proposalId, EventState.Propose, _user);
     }
 
-    function executeNewPortfolioEngineer(address user) public returns (uint256 proposalId) {
+    function executeNewPortfolioEngineer(address _user) public returns (uint256 proposalId) {
         proposalId = defaultExecute(
-            abi.encodeWithSelector(AccessControl.grantRole.selector, PORTFOLIO_ENGINEER_ROLE, user)
+            abi.encodeWithSelector(AccessControl.grantRole.selector, PORTFOLIO_ENGINEER_ROLE, _user)
         );
-        emit NewPortfolioEngineer(proposalId, EventState.Execute, user);
+        emit NewPortfolioEngineer(proposalId, EventState.Execute, _user);
     }
 
-    function proposeRemovePortfolioEngineer(address user) public returns (uint256 proposalId) {
-        require(AccessControl(address(token)).hasRole(PORTFOLIO_ENGINEER_ROLE, user), 'Role not granted');
+    function proposeRemovePortfolioEngineer(address _user) public returns (uint256 proposalId) {
+        require(AccessControl(address(token)).hasRole(PORTFOLIO_ENGINEER_ROLE, _user), 'Role not granted');
         proposalId = defaultPropose(
-            abi.encodeWithSelector(AccessControl.revokeRole.selector, PORTFOLIO_ENGINEER_ROLE, user)
+            abi.encodeWithSelector(AccessControl.revokeRole.selector, PORTFOLIO_ENGINEER_ROLE, _user)
         );
-        emit RemovePortfolioEngineer(proposalId, EventState.Propose, user);
+        emit RemovePortfolioEngineer(proposalId, EventState.Propose, _user);
     }
 
-    function executeRemovePortfolioEngineer(address user) public returns (uint256 proposalId) {
+    function executeRemovePortfolioEngineer(address _user) public returns (uint256 proposalId) {
         proposalId = defaultExecute(
-            abi.encodeWithSelector(AccessControl.revokeRole.selector, PORTFOLIO_ENGINEER_ROLE, user)
+            abi.encodeWithSelector(AccessControl.revokeRole.selector, PORTFOLIO_ENGINEER_ROLE, _user)
         );
-        emit RemovePortfolioEngineer(proposalId, EventState.Execute, user);
+        emit RemovePortfolioEngineer(proposalId, EventState.Execute, _user);
     }
 
     function proposeReconfigure(uint256[] memory _weights) public returns (uint256 proposalId) {
@@ -103,6 +107,26 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
         emit NewAsset(proposalId, EventState.Execute, _token, _priceFeed);
     }
 
+    function proposeUpdateRebalanceBonus(uint256 _rebalanceBonus) public returns (uint256 proposalId) {
+        proposalId = defaultPropose(abi.encodeWithSelector(InzenFunds.updateRebalanceBonus.selector, _rebalanceBonus));
+        emit UpdateRebalanceBonus(proposalId, EventState.Propose, _rebalanceBonus);
+    }
+
+    function executeUpdateRebalanceBonus(uint256 _rebalanceBonus) public returns (uint256 proposalId) {
+        proposalId = defaultExecute(abi.encodeWithSelector(InzenFunds.updateRebalanceBonus.selector, _rebalanceBonus));
+        emit UpdateRebalanceBonus(proposalId, EventState.Execute, _rebalanceBonus);
+    }
+
+    function proposeUpdateMinRebalanceInterval(uint256 _interval) public returns (uint256 proposalId) {
+        proposalId = defaultPropose(abi.encodeWithSelector(InzenFunds.updateMinRebalanceInterval.selector, _interval));
+        emit UpdateMinRebalanceInterval(proposalId, EventState.Propose, _interval);
+    }
+
+    function executeUpdateMinRebalanceInterval(uint256 _interval) public returns (uint256 proposalId) {
+        proposalId = defaultExecute(abi.encodeWithSelector(InzenFunds.updateMinRebalanceInterval.selector, _interval));
+        emit UpdateMinRebalanceInterval(proposalId, EventState.Execute, _interval);
+    }
+
     function defaultPropose(bytes memory data) internal returns (uint256) {
         bytes[] memory calldatas = new bytes[](1);
         calldatas[0] = data;
@@ -115,7 +139,7 @@ contract InzenGovernor is GovernorVotesQuorumFraction, GovernorCountingSimple, E
         return execute(_defaultTargets, _defaultValues, calldatas, keccak256(bytes('')));
     }
 
-    function supportsInterface(bytes4 interfaceId) public view virtual override(Governor, EasyGovernor) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public virtual override(Governor, EasyGovernor) view returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 }

@@ -13,6 +13,7 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
     using SafeERC20 for ERC20;
 
     bytes32 public constant PORTFOLIO_ENGINEER_ROLE = keccak256('PORTFOLIO_ENGINEER_ROLE');
+    uint256 public constant MAX_REBALANCE_BONUS = 1000;
 
     struct Assets {
         ERC20 token;
@@ -25,12 +26,17 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
     mapping(ERC20 => uint256) private tokenIdx;
     AggregationRouterV5Interface public router;
     ERC20 public baseToken;
+    uint256 public minRebalanceInterval = 86400;
+    uint256 public lastRebalanceTs = 0;
+    uint256 public rebalanceBonus = 0; // 1 = 0.001%, 1000 = 1%
 
     event Deposit(address indexed user, uint256 baseAmount, uint256 mintAmount);
     event Withdraw(address indexed user, uint256 baseAmount, uint256 burnAmount);
     event Rebalance(ERC20 indexed fromToken, ERC20 indexed toToken, uint256 fromAmount, uint256 toAmount);
     event Reconfigure(uint256[] weights);
     event AddAsset(ERC20 indexed token, AggregatorV3Interface priceFeed);
+    event UpdateRebalanceBonus(uint256 bonus);
+    event UpdateMinRebalanceInterval(uint256 interval);
 
     /**
      * @notice Initialize the contract
@@ -156,6 +162,10 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
      * @dev call `https://api.1inch.io/v5.0/${chainId}/swap?fromTokenAddress=${fromToken}&toTokenAddress=${toToken}&amount=${amount}&fromAddress=${poolAddress}&slippage=1&disableEstimate=true`
      */
     function rebalance(bytes[] calldata _swapdata) external onlyRole(PORTFOLIO_ENGINEER_ROLE) nonReentrant {
+        require(_swapdata.length > 0, 'Invalid swap data');
+        require(block.timestamp - lastRebalanceTs > minRebalanceInterval, 'Too many rebalance');
+        lastRebalanceTs = block.timestamp;
+
         address executor;
         AggregationRouterV5Interface.SwapDescription memory desc;
         bytes memory permit;
@@ -172,6 +182,10 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
             portfolio[tokenIdx[desc.srcToken] - 1].amount -= spentAmount;
             portfolio[tokenIdx[desc.dstToken] - 1].amount += returnAmount;
             emit Rebalance(desc.srcToken, desc.dstToken, spentAmount, returnAmount);
+        }
+
+        if (rebalanceBonus > 0) {
+            _mint(msg.sender, (rebalanceBonus * totalSupply()) / 100000);
         }
     }
 
@@ -200,6 +214,25 @@ contract InzenFunds is AccessControlEnumerable, ERC20Votes, ReentrancyGuard {
         portfolio.push(Assets(_token, _priceFeed, 0, 0));
         tokenIdx[_token] = portfolio.length;
         emit AddAsset(_token, _priceFeed);
+    }
+
+    /**
+     * @notice Set new rebalance bonus
+     * @param _rebalanceBonus: bonus (1 = 0.001%)
+     */
+    function updateRebalanceBonus(uint256 _rebalanceBonus) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_rebalanceBonus <= MAX_REBALANCE_BONUS, 'Too much bonus');
+        rebalanceBonus = _rebalanceBonus;
+        emit UpdateRebalanceBonus(_rebalanceBonus);
+    }
+
+    /**
+     * @notice Set new rebalance interval
+     * @param _interval: min interval between 2 rebalance
+     */
+    function updateMinRebalanceInterval(uint256 _interval) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        minRebalanceInterval = _interval;
+        emit UpdateMinRebalanceInterval(_interval);
     }
 
     /**
